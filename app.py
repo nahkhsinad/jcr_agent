@@ -52,7 +52,7 @@ def load_data(_refresh=False):
         logger.error(f"Error loading data: {e}")
         return pd.DataFrame()
 #- - -
-
+#-
 def main():
     st.markdown('<div class="center-align">', unsafe_allow_html=True)
     st.title("Job Card Register Agent")
@@ -109,6 +109,7 @@ def main():
         view_entries()
     elif st.session_state.page == "insights":
         show_insights()
+        #-
 
 def create_entry():
     st.header("Create New Entry")
