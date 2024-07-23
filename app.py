@@ -8,6 +8,7 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import logging
 import os
+import requests
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
