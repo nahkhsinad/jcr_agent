@@ -217,7 +217,7 @@ def update_entry():
 
     if st.session_state.update_step == 'select':
         selection = st.radio("Select", ["Team", "Individual"])
-                if st.button("Next", key="next_to_update"):
+            if st.button("Next", key="next_to_update"):
             st.session_state.selection = selection
             st.session_state.update_step = 'choose_entry'
             st.rerun()
