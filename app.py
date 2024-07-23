@@ -15,23 +15,27 @@ logger = logging.getLogger(__name__)
 # Set page config
 st.set_page_config(page_title="JCR Agent", layout="wide")
 
+#- - -
 # Database connection function
 def get_connection():
-    return sqlite3.connect('/Users/danishkhan/Documents/PROJECTS/PROJECTS_TBS/streamlit01/0.2/data/database.db', check_same_thread=False)
+    db_path = '/mnt/data/database.db'  # Use /mnt/data/ for Streamlit Cloud
+    if not os.path.exists(db_path):
+        download_db(db_path)
+    return sqlite3.connect(db_path, check_same_thread=False)
 
-# Load data from SQLite
-@st.cache_data
-def load_data(_refresh=False):
-    if _refresh:
-        st.cache_data.clear()
+# Function to download the database file from GitHub
+def download_db(db_path):
+    url = "https://raw.githubusercontent.com/nahkhsinad/jcr_agent/main/database.db"
     try:
-        with get_connection() as conn:
-            query = "SELECT * FROM jcr"
-            df = pd.read_sql_query(query, conn)
-        return df
-    except Exception as e:
-        logger.error(f"Error loading data: {e}")
-        return pd.DataFrame()
+        response = requests.get(url)
+        response.raise_for_status()
+        with open(db_path, 'wb') as f:
+            f.write(response.content)
+        logger.info("Database file downloaded successfully.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error downloading database file: {e}")
+        st.error("Failed to download the database file. Please try again later.")
+#- - -
 
 def main():
     st.markdown('<div class="center-align">', unsafe_allow_html=True)
