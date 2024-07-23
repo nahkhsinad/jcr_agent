@@ -297,7 +297,7 @@ elif st.session_state.update_step == 'update_form':
                 logger.error(f"Error updating entry: {e}")
                 st.error(f"An error occurred while updating the entry: {e}")
                 def view_entries():
-            st.header(“View Entries”)
+                st.header(“View Entries”)
 
 if st.button("Refresh Data"):
     load_data.clear()
