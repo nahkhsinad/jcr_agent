@@ -37,7 +37,19 @@ def download_db(db_path):
         logger.error(f"Error downloading database file: {e}")
         st.error("Failed to download the database file. Please try again later.")
 
-
+# Load data from SQLite
+@st.cache_data
+def load_data(_refresh=False):
+    if _refresh:
+        st.cache_data.clear()
+    try:
+        with get_connection() as conn:
+            query = "SELECT * FROM jcr"
+            df = pd.read_sql_query(query, conn)
+        return df
+    except Exception as e:
+        logger.error(f"Error loading data: {e}")
+        return pd.DataFrame()
 #- - -
 
 def main():
