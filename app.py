@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import sqlite3
 from datetime import datetime, time, date, timedelta
 import uuid
 from wordcloud import WordCloud
@@ -9,6 +8,7 @@ import matplotlib.pyplot as plt
 import logging
 import os
 import requests
+from streamlit_gsheets import GSheetsConnection
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -17,35 +17,16 @@ logger = logging.getLogger(__name__)
 # Set page config
 st.set_page_config(page_title="JCR Agent", layout="wide")
 
-# Database connection function
-def get_connection():
-    db_path = '/mnt/data/database.db'  # Use /mnt/data/ for Streamlit Cloud
-    if not os.path.exists(db_path):
-        download_db(db_path)
-    return sqlite3.connect(db_path, check_same_thread=False)
+# Connect to Google Sheets
+conn = st.experimental_connection("gsheets", type=GSheetsConnection)
 
-# Function to download the database file from GitHub
-def download_db(db_path):
-    url = "https://raw.githubusercontent.com/nahkhsinad/jcr_agent/main/database.db"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        with open(db_path, 'wb') as f:
-            f.write(response.content)
-        logger.info("Database file downloaded successfully.")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error downloading database file: {e}")
-        st.error("Failed to download the database file. Please try again later.")
-
-# Load data from SQLite
+# Load data from Google Sheets
 @st.cache_data
 def load_data(_refresh=False):
     if _refresh:
         st.cache_data.clear()
     try:
-        with get_connection() as conn:
-            query = "SELECT * FROM jcr"
-            df = pd.read_sql_query(query, conn)
+        df = conn.read(spreadsheet="JCR_Agent_DB", worksheet="Sheet1")
         return df
     except Exception as e:
         logger.error(f"Error loading data: {e}")
@@ -181,22 +162,27 @@ def create_entry():
             submitted = st.form_submit_button("Submit")
             if submitted:
                 try:
-                    with get_connection() as conn:
-                        cursor = conn.cursor()
-                        
-                        if st.session_state.selection == "Team":
-                            for member in team_members:
-                                cursor.execute("""
-                                INSERT INTO jcr (Job_UID, Job_Created_At, Job_Created_By, Job_Date, Employee_Team, Employee_Name, Presence, Project, PHASE_SPACE, Product, Part_number, Part_Name, Task, Task_Q, Start_Time, Finish_Time, Status, Remarks)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                """, (str(uuid.uuid4()), job_created_at, job_created_by, job_date_str, team, member, presence, project, phase_space, products, part_number, part_name, task, task_quantity, start_time.strftime("%H:%M"), finish_time.strftime("%H:%M"), status, remarks))
-                        else:
-                            cursor.execute("""
-                            INSERT INTO jcr (Job_UID, Job_Created_At, Job_Created_By, Job_Date, Employee_Team, Employee_Name, Presence, Project, PHASE_SPACE, Product, Part_number, Part_Name, Task, Task_Q, Start_Time, Finish_Time, Status, Remarks)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (job_uid, job_created_at, job_created_by, job_date_str, team, name, presence, project, phase_space, products, part_number, part_name, task, task_quantity, start_time.strftime("%H:%M"), finish_time.strftime("%H:%M"), status, remarks))
-                        
-                        conn.commit()
+                    new_entry = pd.DataFrame({
+                        "Job_UID": [str(uuid.uuid4())],
+                        "Job_Created_At": [job_created_at],
+                        "Job_Created_By": [job_created_by],
+                        "Job_Date": [job_date_str],
+                        "Employee_Team": [team],
+                        "Employee_Name": [name if st.session_state.selection == "Individual" else ', '.join(team_members)],
+                        "Presence": [presence],
+                        "Project": [project],
+                        "PHASE_SPACE": [phase_space],
+                        "Product": [products],
+                        "Part_number": [part_number],
+                        "Part_Name": [part_name],
+                        "Task": [task],
+                        "Task_Q": [task_quantity],
+                        "Start_Time": [start_time.strftime("%H:%M")],
+                        "Finish_Time": [finish_time.strftime("%H:%M")],
+                        "Status": [status],
+                        "Remarks": [remarks]
+                    })
+                    conn.update(spreadsheet="JCR_Agent_DB", worksheet="Sheet1", data=pd.concat([data, new_entry]))
                     st.success("Entry successfully added to the database!")
                     st.session_state.create_step = 'select'
                     st.rerun()
@@ -268,29 +254,17 @@ def update_entry():
 
             if submitted:
                 try:
-                    with get_connection() as conn:
-                        cursor = conn.cursor()
-                        if st.session_state.selection == "Team":
-                            update_query = """
-                            UPDATE jcr 
-                            SET Finish_Time = ?, Status = ?, Remarks = ?
-                            WHERE Employee_Team = ? AND Job_Date = ? AND Employee_Name IN ({})
-                            """.format(','.join(['?']*len(team_info['members'])))
-                            
-                            params = (new_finish_time.strftime("%H:%M"), new_status, new_remarks, 
-                                      team_info['team'], team_info['date']) + tuple(team_info['members'])
-                            
-                            cursor.execute(update_query, params)
-                            st.success(f"Updated {cursor.rowcount} entries successfully!")
-                        else:
-                            cursor.execute("""
-                            UPDATE jcr 
-                            SET Finish_Time = ?, Status = ?, Remarks = ?
-                            WHERE Job_UID = ?
-                            """, (new_finish_time.strftime("%H:%M"), new_status, new_remarks, entry_id))
-                            st.success("Entry updated successfully!")
-                        conn.commit()
-                    load_data.clear()
+                    if st.session_state.selection == "Team":
+                        for member in team_info['members']:
+                            data.loc[(data['Employee_Team'] == team_info['team']) & 
+                                     (data['Job_Date'] == team_info['date']) & 
+                                     (data['Employee_Name'] == member), 
+                                     ['Finish_Time', 'Status', 'Remarks']] = [new_finish_time.strftime("%H:%M"), new_status, new_remarks]
+                    else:
+                        data.loc[data['Job_UID'] == entry_id, ['Finish_Time', 'Status', 'Remarks']] = [new_finish_time.strftime("%H:%M"), new_status, new_remarks]
+                    
+                    conn.update(spreadsheet="JCR_Agent_DB", worksheet="Sheet1", data=data)
+                    st.success("Entry updated successfully!")
                     st.session_state.update_step = 'select'
                     st.rerun()
                 except Exception as e:
